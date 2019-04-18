@@ -1,0 +1,14 @@
+<?xml version="1.0"?>
+<page xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="urn:magento:framework:View/Layout/etc/page_configuration.xsd">
+<body>
+    <referenceBlock name="head.additional">
+        <block class="LuigisBox\SearchSuite\Block\Script" name="script" template="LuigisBox_SearchSuite::script.phtml" />
+    </referenceBlock>
+
+    <referenceBlock name="top.search">
+        <action method="setTemplate">
+            <argument name="template" xsi:type="string">LuigisBox_SearchSuite::form.mini.phtml</argument>
+        </action>
+    </referenceBlock>
+</body>
+</page>
