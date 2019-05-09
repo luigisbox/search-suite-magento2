@@ -2,6 +2,7 @@
   "name": "luigisbox/search-suite-magento2",
   "description": "LuigisBox Search suite for Magento 2",
   "type": "magento2-module",
+  "minimum-stability": "stable",
   "license": ["MIT"],
   "version": "1.0.0",
   "require": {
