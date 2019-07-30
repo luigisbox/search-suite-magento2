@@ -1,14 +1,4 @@
 <?php $helper = $this->helper('\LuigisBox\SearchSuite\Helper\Helper'); ?>
-<?php if ($helper->isEnabled()): ?>
-<script async data-luigisbox-tracker-id="<?php echo $helper->getTrackerId(); ?>" src="<?php echo $helper->getTrackerUrl(); ?>"></script>
-<?php endif; ?>
-<?php if ($helper->isAutocompleteEnabled()): ?>
-<link rel="stylesheet" href="https://cdn.luigisbox.com/autocomplete.css"/>
-<link rel="dns-prefetch" href="//live.luigisbox.com">
-<script>
-    window.LBInitAutocomplete = function() {
-        AutoComplete(<?php echo $helper->getAutocompleteConfig(); ?>, '#search');
-    }
-</script>
-<script src="https://cdn.luigisbox.com/autocomplete.js" async onload="LBInitAutocomplete()"></script>
+<?php if ($helper->hasTrackerUrl()): ?>
+<script async src="<?php echo $helper->getTrackerUrl(); ?>"></script>
 <?php endif; ?>

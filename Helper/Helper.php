@@ -12,12 +12,10 @@ use Zend\Http\Request;
 
 class Helper extends AbstractHelper
 {
-    const SCRIPT_ENABLED       = 'luigisboxsearch_credentials/credentials/enabled';
-    const TRACKER_ID           = 'luigisboxsearch_credentials/credentials/tracker_id';
-    const TRACKER_URL          = 'luigisboxsearch_credentials/credentials/tracker_url';
-    const API_KEY              = 'luigisboxsearch_credentials/credentials/api_key';
-    const AUTOCOMPLETE_CONFIG  = 'luigisboxsearch_credentials/credentials/autocomplete_config';
-    const AUTOCOMPLETE_BLOCK   = 'luigisboxsearch_credentials/credentials/autocomplete_block';
+    const SCRIPT_ENABLED       = 'luigisboxsearch_settings/settings/enabled';
+    const TRACKER_ID           = 'luigisboxsearch_settings/settings/tracker_id';
+    const TRACKER_URL          = 'luigisboxsearch_settings/settings/tracker_url';
+    const API_KEY              = 'luigisboxsearch_settings/settings/api_key';
 
     const API_CONTENT_URI        = 'https://live.luigisbox.com/v1/content';
     const API_CONTENT_COMMIT_URI = 'https://live.luigisbox.com/v1/content/commit';
@@ -40,6 +38,12 @@ class Helper extends AbstractHelper
 
     protected $_helperImage;
 
+    protected $_helperPrice;
+
+    protected $_productVisibility;
+
+    protected $_productStatus;
+
     protected $_storeManager;
 
     protected $_filesystem;
@@ -58,6 +62,9 @@ class Helper extends AbstractHelper
         \Magento\Catalog\Model\ResourceModel\Category\CollectionFactory $categoryCollectionFactory,
         \Magento\Catalog\Model\ResourceModel\Product\CollectionFactory $productCollectionFactory,
         \Magento\Catalog\Helper\Image $helperImage,
+        \Magento\Framework\Pricing\Helper\Data $helperPrice,
+        \Magento\Catalog\Model\Product\Visibility $productVisibility,
+        \Magento\Catalog\Model\Product\Attribute\Source\Status $productStatus,
         \Magento\Store\Model\StoreManager $storeManager,
         \Magento\Framework\Filesystem $filesystem,
         \Magento\Store\Model\App\Emulation $emulation
@@ -66,6 +73,9 @@ class Helper extends AbstractHelper
         $this->_categoryCollectionFactory = $categoryCollectionFactory;
         $this->_productCollectionFactory = $productCollectionFactory;
         $this->_helperImage = $helperImage;
+        $this->_helperPrice = $helperPrice;
+        $this->_productVisibility = $productVisibility;
+        $this->_productStatus = $productStatus;
         $this->_storeManager = $storeManager;
         $this->_filesystem = $filesystem;
         $this->_emulation = $emulation;
@@ -101,13 +111,6 @@ class Helper extends AbstractHelper
         return true;
     }
 
-    public function isAutocompleteEnabled()
-    {
-        $config = $this->getAutocompleteConfig();
-
-        return !empty($config);
-    }
-
     public function getTrackerId()
     {
         return $this->_scopeConfig->getValue(self::TRACKER_ID);
@@ -118,26 +121,16 @@ class Helper extends AbstractHelper
         return $this->_scopeConfig->getValue(self::TRACKER_URL);
     }
 
+    public function hasTrackerUrl()
+    {
+        $url = $this->getTrackerUrl();
+
+        return !empty($url);
+    }
+
     public function getApiKey()
     {
         return $this->_scopeConfig->getValue(self::API_KEY);
-    }
-
-    public function getAutocompleteConfig()
-    {
-        return $this->_scopeConfig->getValue(self::AUTOCOMPLETE_CONFIG);
-    }
-
-    public function hasAutocompleteBlock()
-    {
-        $block = $this->getAutocompleteBlock();
-
-        return !empty($block);
-    }
-
-    public function getAutocompleteBlock()
-    {
-        return $this->_scopeConfig->getValue(self::AUTOCOMPLETE_BLOCK);
     }
 
     public function getRequest($endpoint)
@@ -359,7 +352,9 @@ class Helper extends AbstractHelper
                 ->setCurPage(1);
 
             if ($id === null) {
-                $productCollection->addFieldToFilter('entity_id', ['gt' => $start]);
+                $productCollection->addFieldToFilter('entity_id', ['gt' => $start])
+                    ->addAttributeToFilter('status', ['in' => $this->_productStatus->getVisibleStatusIds()])
+                    ->setVisibility($this->_productVisibility->getVisibleInSearchIds());
             } else {
                 $productCollection->addFieldToFilter('entity_id', $id);
             }
@@ -379,10 +374,11 @@ class Helper extends AbstractHelper
                         'title'             => $item->getName(),
                         'product_code'      => $item->getSku(),
                         'price_amount'      => (float) $item->getPrice(),
+                        'price'             => $this->_helperPrice->currency($item->getPrice(), true, false),
                         'description'       => trim($item->getDescription()),
                         'short_description' => trim($item->getShortDescription()),
                     ],
-                    'enabled' => ($item->getStatus() == \Magento\Catalog\Model\Product\Attribute\Source\Status::STATUS_ENABLED),
+                    'enabled' => (in_array($item->getStatus(), $this->_productStatus->getVisibleStatusIds()) && in_array($item->getVisibility(), $this->_productVisibility->getVisibleInSearchIds())),
                     'nested' => [],
                 ];
 
@@ -519,6 +515,7 @@ class Helper extends AbstractHelper
         }
 
         $client = new Client();
+        $client->setOptions(['timeout' => 30]);
 
         $success = true;
         $chunks = 0;
@@ -543,6 +540,7 @@ class Helper extends AbstractHelper
 
         if ($success && $chunks > 0 && $generation !== null) {
             $client = new Client();
+            $client->setOptions(['timeout' => 30]);
 
             $types = array_merge([$type], $nestedTypes);
             foreach ($types as $commitType) {
@@ -584,6 +582,7 @@ class Helper extends AbstractHelper
 
         $success = true;
         $client = new Client();
+        $client->setOptions(['timeout' => 30]);
         try {
             $response = $client->send($request);
 
