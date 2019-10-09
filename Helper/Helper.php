@@ -312,6 +312,10 @@ class Helper extends AbstractHelper
             }
 
             foreach ($categoriesPerLevel as $catId => $catParentId) {
+                if (!array_key_exists($catParentId, $categories)) {
+                    continue;
+                }                
+
                 $parentCategory = $categories[$catParentId];
 
                 $ancestors = $parentCategory['fields']['ancestors'];
