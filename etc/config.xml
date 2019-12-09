@@ -1,0 +1,14 @@
+<?xml version="1.0"?>
+<config xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:noNamespaceSchemaLocation="urn:magento:module:Magento_Store:etc/config.xsd">
+    <default>
+        <luigisboxsearch_settings>
+            <settings>
+                <attributes_required>1</attributes_required>
+                <attributes_visible>1</attributes_visible>
+                <attributes_searchable>1</attributes_searchable>
+                <attributes_filterable>1</attributes_filterable>
+            </settings>
+        </luigisboxsearch_settings>
+    </default>
+</config>

@@ -17,6 +17,11 @@ class Helper extends AbstractHelper
     const TRACKER_URL          = 'luigisboxsearch_settings/settings/tracker_url';
     const API_KEY              = 'luigisboxsearch_settings/settings/api_key';
 
+    const SYNC_REQUIRED_ATTRIBUTES = 'luigisboxsearch_settings/settings/attributes_required';
+    const SYNC_VISIBLE_ATTRIBUTES = 'luigisboxsearch_settings/settings/attributes_visible';
+    const SYNC_SEARCHABLE_ATTRIBUTES = 'luigisboxsearch_settings/settings/attributes_searchable';
+    const SYNC_FILTERABLE_ATTRIBUTES = 'luigisboxsearch_settings/settings/attributes_filterable';
+
     const API_CONTENT_URI        = 'https://live.luigisbox.com/v1/content';
     const API_CONTENT_COMMIT_URI = 'https://live.luigisbox.com/v1/content/commit';
 
@@ -50,6 +55,8 @@ class Helper extends AbstractHelper
 
     protected $_emulation;
 
+    protected $_deploymentConfig;
+
     protected $_fixImageLinksOmittingPubFolder; // @see https://github.com/magento/magento2/issues/9111
 
     /**
@@ -67,7 +74,8 @@ class Helper extends AbstractHelper
         \Magento\Catalog\Model\Product\Attribute\Source\Status $productStatus,
         \Magento\Store\Model\StoreManager $storeManager,
         \Magento\Framework\Filesystem $filesystem,
-        \Magento\Store\Model\App\Emulation $emulation
+        \Magento\Store\Model\App\Emulation $emulation,
+        \Magento\Framework\App\DeploymentConfig $deploymentConfig
     ) {
         $this->_scopeConfig = $scopeConfig;
         $this->_categoryCollectionFactory = $categoryCollectionFactory;
@@ -79,6 +87,7 @@ class Helper extends AbstractHelper
         $this->_storeManager = $storeManager;
         $this->_filesystem = $filesystem;
         $this->_emulation = $emulation;
+        $this->_deploymentConfig = $deploymentConfig;
         parent::__construct($context);
     }
 
@@ -89,7 +98,9 @@ class Helper extends AbstractHelper
      */
     public function isEnabled()
     {
-        return (bool) $this->_scopeConfig->getValue(self::SCRIPT_ENABLED);
+        $storeScope = \Magento\Store\Model\ScopeInterface::SCOPE_STORE;
+
+        return (bool) $this->_scopeConfig->getValue(self::SCRIPT_ENABLED, $storeScope);
     }
 
     public function isConfigured()
@@ -113,12 +124,44 @@ class Helper extends AbstractHelper
 
     public function getTrackerId()
     {
-        return $this->_scopeConfig->getValue(self::TRACKER_ID);
+        $storeScope = \Magento\Store\Model\ScopeInterface::SCOPE_STORE;
+
+        return $this->_scopeConfig->getValue(self::TRACKER_ID, $storeScope);
     }
 
     public function getTrackerUrl()
     {
-        return $this->_scopeConfig->getValue(self::TRACKER_URL);
+        $storeScope = \Magento\Store\Model\ScopeInterface::SCOPE_STORE;
+
+        return $this->_scopeConfig->getValue(self::TRACKER_URL, $storeScope);
+    }
+
+    public function getSyncRequiredAttributes()
+    {
+        $storeScope = \Magento\Store\Model\ScopeInterface::SCOPE_STORE;
+
+        return $this->_scopeConfig->getValue(self::SYNC_REQUIRED_ATTRIBUTES, $storeScope);
+    }
+
+    public function getSyncVisibleAttributes()
+    {
+        $storeScope = \Magento\Store\Model\ScopeInterface::SCOPE_STORE;
+
+        return $this->_scopeConfig->getValue(self::SYNC_VISIBLE_ATTRIBUTES, $storeScope);
+    }
+
+    public function getSyncSearchableAttributes()
+    {
+        $storeScope = \Magento\Store\Model\ScopeInterface::SCOPE_STORE;
+
+        return $this->_scopeConfig->getValue(self::SYNC_SEARCHABLE_ATTRIBUTES, $storeScope);
+    }
+
+    public function getSyncFilterableAttributes()
+    {
+        $storeScope = \Magento\Store\Model\ScopeInterface::SCOPE_STORE;
+
+        return $this->_scopeConfig->getValue(self::SYNC_FILTERABLE_ATTRIBUTES, $storeScope);
     }
 
     public function hasTrackerUrl()
@@ -130,7 +173,9 @@ class Helper extends AbstractHelper
 
     public function getApiKey()
     {
-        return $this->_scopeConfig->getValue(self::API_KEY);
+        $storeScope = \Magento\Store\Model\ScopeInterface::SCOPE_STORE;
+
+        return $this->_scopeConfig->getValue(self::API_KEY, $storeScope);
     }
 
     public function getRequest($endpoint)
@@ -272,26 +317,41 @@ class Helper extends AbstractHelper
         return self::API_CONTENT_URI;
     }
 
-    public function getCategories()
+
+    public function getAdminPrefix()
     {
-        $storeId = $this->_storeManager->getDefaultStoreView()->getStoreId();
+        return $this->_deploymentConfig->get('backend/frontName');
+    }
 
-        $this->_emulation->startEnvironmentEmulation(null, Area::AREA_FRONTEND, true);
+    public function isAdminUrl($url, $storeUrl)
+    {
+        $storeAdminUrl = $storeUrl . $this->getAdminPrefix();
 
+        return (substr($url, 0, strlen($storeAdminUrl)) === $storeAdminUrl);
+    }
+
+    public function getCategories($store)
+    {
         $categoryCollection = $this->_categoryCollectionFactory->create()
             ->addFieldToSelect('name')
             ->addFieldToFilter('is_active', 1)
             ->addFieldToFilter('level', ['gt' => 1])
-            ->setStoreId($storeId)
+            ->setStoreId($store->getId())
             ->addUrlRewriteToResult()
             ->load();
 
         $categories = [];
         $categoriesPerLevels = [];
         foreach ($categoryCollection as $item) {
+            $categoryUrl = $this->sanitizeUrl($item->getUrl(), $store);
+            // Omit backend URLs
+            if ($this->isAdminUrl($categoryUrl, $store->getBaseUrl())) {
+              continue;
+            }
+
             $category = [
                 'type'   => self::TYPE_CATEGORY,
-                'url'    => $item->getUrl(),
+                'url'    => $categoryUrl,
                 'fields' => [
                     'title'     => $item->getName(),
                     'ancestors' => [],
@@ -301,8 +361,6 @@ class Helper extends AbstractHelper
             $categories[$item->getEntityId()] = $category;
             $categoriesPerLevels[($item->getLevel() - 1)][$item->getEntityId()] = $item->getParentId();
         }
-
-        $this->_emulation->stopEnvironmentEmulation();
 
         ksort($categoriesPerLevels);
         foreach ($categoriesPerLevels as $level => $categoriesPerLevel) {
@@ -314,7 +372,7 @@ class Helper extends AbstractHelper
             foreach ($categoriesPerLevel as $catId => $catParentId) {
                 if (!array_key_exists($catParentId, $categories)) {
                     continue;
-                }                
+                }
 
                 $parentCategory = $categories[$catParentId];
 
@@ -332,15 +390,16 @@ class Helper extends AbstractHelper
         return $categories;
     }
 
-    public function getContentData($id = null)
+    public function getContentData($store, $id = null)
     {
         $start = 0;
         $take = 500;
         $data = [];
 
-        $storeId = $this->_storeManager->getDefaultStoreView()->getStoreId();
+        $storeId = $store->getStoreId();
+        $this->_emulation->startEnvironmentEmulation($storeId, Area::AREA_FRONTEND, true);
 
-        $categories = $this->getCategories();
+        $categories = $this->getCategories($store);
 
         while (true) {
             $productCollection = $this->_productCollectionFactory->create()
@@ -372,8 +431,14 @@ class Helper extends AbstractHelper
             $this->_logger->debug('Luigi\'s Box content progress ' . $start);
 
             foreach ($productCollection as $item) {
+                $productUrl = $this->sanitizeUrl($item->getProductUrl(false), $store);
+                // Omit backend URLs
+                if ($this->isAdminUrl($productUrl, $store->getBaseUrl())) {
+                    continue;
+                }
+
                 $datum = [
-                    'url'    => $item->getProductUrl(),
+                    'url'    => $productUrl,
                     'fields' => [
                         'title'             => $item->getName(),
                         'product_code'      => $item->getSku(),
@@ -405,15 +470,26 @@ class Helper extends AbstractHelper
                 $keysAttributes = array_keys($attributes);
 
                 $importantAttributes = array_diff($keysAttributes, $this->getIgnoredAttributes());
-                foreach ($importantAttributes as $importantAttribute) {
-                    $attribute = $item->getAttributeText($importantAttribute);
-                    $attributeLabel = array_key_exists($importantAttribute, $attributes) ? $attributes[$importantAttribute]->getDefaultFrontendLabel() : null;
+                foreach ($importantAttributes as $attributeCode) {
+                    $attribute = $attributes[$attributeCode];
+                    $attributeValue = $item->getAttributeText($attributeCode);
+                    $attributeLabel = $attribute->getDefaultFrontendLabel();
 
-                    if ($attribute === null || $attributeLabel === null) {
+                    if ($attributeValue === null || $attributeLabel === null) {
                         continue;
                     }
 
-                    $datum['fields'][$attributeLabel] = $attribute;
+                    $isRequiredAttribute   = ($this->getSyncRequiredAttributes() && $attribute->getIsRequired());
+                    $isVisibleAttribute    = ($this->getSyncVisibleAttributes() && $attribute->getIsVisibleOnFront());
+                    $isSearchableAttribute = ($this->getSyncSearchableAttributes() && $attribute->getIsSearchable());
+                    $isFilterableAttribute = ($this->getSyncFilterableAttributes() && ($attribute->getIsFilterable() || $attribute->getIsFilterableInSearch()));
+
+                    if (!($isRequiredAttribute || $isVisibleAttribute || $isSearchableAttribute || $isFilterableAttribute)) {
+                        // Omit attributes which are not defined as synchronised in settings
+                        continue;
+                    }
+
+                    $datum['fields'][$attributeLabel] = $attributeValue;
                 }
 
                 // Add categories
@@ -435,6 +511,8 @@ class Helper extends AbstractHelper
                 break;
             }
         }
+
+        $this->_emulation->stopEnvironmentEmulation();
 
         return $data;
     }
@@ -510,8 +588,10 @@ class Helper extends AbstractHelper
         ];
     }
 
-    public function contentRequest($data, $type, $generation = null, $nestedTypes = [])
+    public function contentRequest($store, $data, $type, $generation = null, $nestedTypes = [])
     {
+        $this->_emulation->startEnvironmentEmulation($store->getId(), Area::AREA_FRONTEND, true);
+
         if ($generation === null) {
             $data = $this->appendTypeToData($data, $type);
         } else {
@@ -569,11 +649,15 @@ class Helper extends AbstractHelper
             }
         }
 
+        $this->_emulation->stopEnvironmentEmulation();
+
         return $success;
     }
 
-    public function contentDeleteRequest($data, $type)
+    public function contentDeleteRequest($store, $data, $type)
     {
+        $this->_emulation->startEnvironmentEmulation($store->getId(), Area::AREA_FRONTEND, true);
+
         $objects = [];
         foreach ($data as $datum) {
             $objects[] = [
@@ -599,33 +683,41 @@ class Helper extends AbstractHelper
             $success = false;
         }
 
+        $this->_emulation->stopEnvironmentEmulation();
+
         return $success;
     }
 
     public function singleContentUpdate($id)
     {
-        $data = $this->getContentData($id);
+        foreach($this->_storeManager->getStores() as $store) {
+            $data = $this->getContentData($store, $id);
 
-        if (count($data) === 0) {
-            $this->_logger->debug('Luigi\'s Box product not found ' . $id);
-            return;
-        }
+            if (count($data) === 0) {
+                $this->_logger->debug('Luigi\'s Box product not found ' . $id);
+                continue;
+            }
 
-        if ($data[0]['enabled']) {
-            $this->contentRequest($data, Helper::TYPE_ITEM);
-        } else {
-            $this->contentDeleteRequest($data, Helper::TYPE_ITEM);
+            if ($data[0]['enabled']) {
+                $this->contentRequest($store, $data, Helper::TYPE_ITEM);
+            } else {
+                $this->contentDeleteRequest($store, $data, Helper::TYPE_ITEM);
+            }
         }
     }
 
     public function allContentUpdate()
     {
         $this->_logger->info('Luigi\'s Box product update start');
-        $data = $this->getContentData();
 
-        $generation = (string) round(microtime(true));
 
-        $this->contentRequest($data, Helper::TYPE_ITEM, $generation, [Helper::TYPE_CATEGORY]);
+        foreach($this->_storeManager->getStores() as $store) {
+            $data = $this->getContentData($store);
+
+            $generation = (string) round(microtime(true));
+
+            $this->contentRequest($store, $data, Helper::TYPE_ITEM, $generation, [Helper::TYPE_CATEGORY]);
+        }
 
         $this->_logger->info('Luigi\'s Box product update end');
     }
@@ -752,5 +844,17 @@ class Helper extends AbstractHelper
         $this->setLogfile($log);
 
         $this->_logger->debug('Luigi\'s Box index invalidated');
+    }
+
+    public function sanitizeUrl($url, $store)
+    {
+        $validHost = parse_url($store->getBaseUrl(), PHP_URL_HOST);
+        $currentHost = parse_url($url, PHP_URL_HOST);
+
+        if ($validHost === $currentHost) {
+            return $url;
+        }
+
+        return preg_replace('/' . preg_quote($currentHost) . '/', $validHost, $url, 1);
     }
 }
