@@ -1,0 +1,42 @@
+<script>
+    require([
+        'jquery',
+        'prototype'
+    ], function(jQuery){
+
+        var reindexSpan = jQuery('#lb_reindex_wrap');
+
+        jQuery('#lb_reindex_button').click(function () {
+            var params = {};
+            new Ajax.Request('<?php echo $block->getAjaxUrl() ?>', {
+                parameters:     params,
+                loaderArea:     false,
+                asynchronous:   true,
+                onCreate: function() {
+                    reindexSpan.find('.requested').hide();
+                    reindexSpan.find('.processing').show();
+                    jQuery('#lb_reindex_message_span').text('');
+                },
+                onSuccess: function(response) {
+                    reindexSpan.find('.processing').hide();
+
+                    var resultText = '';
+                    if (response.status > 200) {
+                        resultText = response.statusText;
+                    } else {
+                        resultText = 'Reindex requested successfully';
+                        reindexSpan.find('.requested').show();
+                    }
+                    jQuery('#lb_reindex_message_span').text(resultText);
+                }
+            });
+        });
+
+    });
+</script>
+<?php echo $block->getButtonHtml() ?>
+<span class="reindex-indicator" id="lb_reindex_wrap">
+    <img class="processing" hidden="hidden" alt="Processing" style="margin:0 5px" src="<?php echo $block->getViewFileUrl('images/process_spinner.gif') ?>"/>
+    <img class="requested" hidden="hidden" alt="Requested" style="margin:-3px 5px" src="<?php echo $block->getViewFileUrl('images/rule_component_apply.gif') ?>"/>
+    <span id="lb_reindex_message_span"></span>
+</span>

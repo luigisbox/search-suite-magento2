@@ -8,7 +8,7 @@
                  showInStore="1">
             <label>Settings</label>
             <tab>luigisbox</tab>
-            <resource>Lugisbox_LugisboxSearch::LuigisBox_SearchSuite</resource>
+            <resource>LuigisBox_SearchSuite::config</resource>
             <group id="settings" translate="label" type="text" sortOrder="0" showInDefault="1" showInWebsite="1" showInStore="1">
                 <label>Credentials and Setup</label>
                 <field id="tracker_url" translate="label comment" type="text" sortOrder="0" showInDefault="1" showInWebsite="1" showInStore="1">
@@ -75,6 +75,13 @@
                         <field id="enabled">1</field>
                     </depends>
                     <source_model>Magento\Config\Model\Config\Source\Yesno</source_model>
+                </field>
+                <field id="force_reindex" translate="label comment" type="button" sortOrder="8" showInDefault="1" showInWebsite="1" showInStore="1">
+                    <frontend_model>LuigisBox\SearchSuite\Block\Reindex</frontend_model>
+                    <label>Force reindex</label>
+                    <depends>
+                        <field id="enabled">1</field>
+                    </depends>
                 </field>
             </group>
         </section>

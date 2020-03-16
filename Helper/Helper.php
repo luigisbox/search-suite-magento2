@@ -32,8 +32,12 @@ class Helper extends AbstractHelper
     const TYPE_ITEM     = 'item';
     const TYPE_CATEGORY = 'category';
 
-    const LOGFILE  = 'luigisbox/update.txt';
+    const LOGFILE = 'luigisbox/update.txt';
     const INTERVAL = 86400;
+    const TIMEOUT = 300;
+    const CHUNK_SIZE = 100;
+    const TIMEOUT_CODES = [408, 504];
+    const COMMIT_RATIO = 0.95;
 
     protected $_scopeConfig;
 
@@ -317,7 +321,6 @@ class Helper extends AbstractHelper
         return self::API_CONTENT_URI;
     }
 
-
     public function getAdminPrefix()
     {
         return $this->_deploymentConfig->get('backend/frontName');
@@ -346,7 +349,7 @@ class Helper extends AbstractHelper
             $categoryUrl = $this->sanitizeUrl($item->getUrl(), $store);
             // Omit backend URLs
             if ($this->isAdminUrl($categoryUrl, $store->getBaseUrl())) {
-              continue;
+                continue;
             }
 
             $category = [
@@ -428,7 +431,7 @@ class Helper extends AbstractHelper
                 break;
             }
 
-            $this->_logger->debug('Luigi\'s Box content progress ' . $start);
+            $this->_logger->debug('Luigi\'s Box: content progress ' . $start);
 
             foreach ($productCollection as $item) {
                 $productUrl = $this->sanitizeUrl($item->getProductUrl(false), $store);
@@ -599,59 +602,90 @@ class Helper extends AbstractHelper
         }
 
         $client = new Client();
-        $client->setOptions(['timeout' => 30]);
+        $client->setOptions(['timeout' => self::TIMEOUT]);
 
         $success = true;
-        $chunks = 0;
-        foreach (array_chunk($data, 500) as $chunk) {
+        $validCount = 0;
+        $invalidCount = 0;
+        foreach (array_chunk($data, self::CHUNK_SIZE) as $chunk) {
             $request = $this->getContentRequest($chunk);
 
             try {
                 $response = $client->send($request);
 
-                $chunks += 1;
-                if ($response->getStatusCode() != 201) {
-                    $this->_logger->error('Invalid response from luigisbox content api');
-                    $success = false;
-                    break;
+                $validResponse = ($response->getStatusCode() === 201);
+                if ($validResponse) {
+                    $validCount += count($chunk);
+                } else {
+                    if (in_array($response->getStatusCode(), self::TIMEOUT_CODES)) {
+                        // Try resend request when timeout occured
+                        sleep(5);
+                        $response = $client->send($request);
+                        $validResponse = ($response->getStatusCode() === 201);
+                    }
+
+                    if ($validResponse) {
+                        $validCount += count($chunk);
+                    } else {
+                        if ($response->getStatusCode() < 500) {
+                            if ($jsonResponse = json_decode($response->getBody())) {
+                                $validCount += ($jsonResponse->ok_count ?? 0);
+                                $invalidCount += ($jsonResponse->errors_count ?? count($chunk));
+                            } else {
+                                $invalidCount += count($chunk);
+                            }
+                            $this->_logger->error('Luigi\'s Box: invalid content api response code ' . $response->getStatusCode() . ', response ' . $response->getBody());
+                        }
+                    }
                 }
             } catch (Exception $ex) {
-                $this->_logger->error('Error accessing luigisbox content api');
                 $success = false;
                 break;
             }
         }
 
-        if ($success && $chunks > 0 && $generation !== null) {
-            $client = new Client();
-            $client->setOptions(['timeout' => 30]);
+        $validRatio = ($validCount > 0) ? ($validCount / ($validCount + $invalidCount)) : 0;
 
-            $types = array_merge([$type], $nestedTypes);
-            foreach ($types as $commitType) {
-                $request = $this->getCommitRequest($generation, $commitType);
-
-                try {
-                    $response = $client->send($request);
-                    if ($response->getStatusCode() != 201) {
-                        $this->_logger->error('Invalid response from luigisbox commit api');
-                        $success = false;
-                        break;
-                    }
-                } catch (Exception $ex) {
-                    $this->_logger->error('Error accessing luigisbox commit api');
-                    $success = false;
-                    break;
-                }
+        $systemProblem = ($success === false);
+        $noCommitNeeded = ($generation === null);
+        $invalidRatio = ($validRatio < self::COMMIT_RATIO);
+        if ($systemProblem || $noCommitNeeded || $invalidRatio) {
+            if ($systemProblem) {
+                $this->_logger->error('Luigi\'s Box: error accessing content api');
             }
+            if ($noCommitNeeded) {
+                $this->_logger->info('Luigi\'s Box: content update ends without commit');
+            }
+            if ($invalidRatio) {
+                $this->_logger->error('Luigi\'s Box: prevent content commit, valid ratio ' . $validRatio);
+            }
+            $this->_emulation->stopEnvironmentEmulation();
 
-            if ($success) {
-                $this->_logger->info(sprintf('Luigi\'s Box content generation %d committed', $generation));
+            return;
+        }
+
+        $client = new Client();
+        $client->setOptions(['timeout' => self::TIMEOUT]);
+
+        $types = array_merge([$type], $nestedTypes);
+        foreach ($types as $commitType) {
+            $request = $this->getCommitRequest($generation, $commitType);
+
+            try {
+                $response = $client->send($request);
+
+                if ($response->getStatusCode() === 201) {
+                    $this->_logger->info(sprintf('Luigi\'s Box: content type %s generation %d committed', $commitType, $generation));
+                } else {
+                    $this->_logger->info(sprintf('Luigi\'s Box: content type %s generation %d failed', $commitType, $generation));
+                }
+            } catch (Exception $ex) {
+                $this->_logger->error('Luigi\'s Box: error accessing commit api');
+                break;
             }
         }
 
         $this->_emulation->stopEnvironmentEmulation();
-
-        return $success;
     }
 
     public function contentDeleteRequest($store, $data, $type)
@@ -670,16 +704,16 @@ class Helper extends AbstractHelper
 
         $success = true;
         $client = new Client();
-        $client->setOptions(['timeout' => 30]);
+        $client->setOptions(['timeout' => self::TIMEOUT]);
         try {
             $response = $client->send($request);
 
             if ($response->getStatusCode() != 200) {
-                $this->_logger->error('Invalid response from luigisbox content api');
+                $this->_logger->error('Luigi\'s Box: invalid response from content api');
                 $success = false;
             }
         } catch (Exception $ex) {
-            $this->_logger->error('Error accessing luigisbox content api');
+            $this->_logger->error('Luigi\'s Box: error accessing content api');
             $success = false;
         }
 
@@ -690,11 +724,11 @@ class Helper extends AbstractHelper
 
     public function singleContentUpdate($id)
     {
-        foreach($this->_storeManager->getStores() as $store) {
+        foreach ($this->_storeManager->getStores() as $store) {
             $data = $this->getContentData($store, $id);
 
             if (count($data) === 0) {
-                $this->_logger->debug('Luigi\'s Box product not found ' . $id);
+                $this->_logger->debug('Luigi\'s Box: product not found ' . $id);
                 continue;
             }
 
@@ -708,10 +742,9 @@ class Helper extends AbstractHelper
 
     public function allContentUpdate()
     {
-        $this->_logger->info('Luigi\'s Box product update start');
+        $this->_logger->info('Luigi\'s Box: product update start');
 
-
-        foreach($this->_storeManager->getStores() as $store) {
+        foreach ($this->_storeManager->getStores() as $store) {
             $data = $this->getContentData($store);
 
             $generation = (string) round(microtime(true));
@@ -719,7 +752,7 @@ class Helper extends AbstractHelper
             $this->contentRequest($store, $data, Helper::TYPE_ITEM, $generation, [Helper::TYPE_CATEGORY]);
         }
 
-        $this->_logger->info('Luigi\'s Box product update end');
+        $this->_logger->info('Luigi\'s Box: product update end');
     }
 
     public function trimPubFromUrl($url)
@@ -747,7 +780,7 @@ class Helper extends AbstractHelper
         try {
             $response = $client->send();
         } catch (Exception $ex) {
-            $this->_logger->error('Error accessing image link');
+            $this->_logger->error('Luigi\'s Box: error accessing image link');
             return false;
         }
 
@@ -762,7 +795,7 @@ class Helper extends AbstractHelper
             try {
                 $log = json_decode($tmp->readFile(self::LOGFILE));
             } catch (\Magento\Framework\Exception\FileSystemException $ex) {
-                $this->_logger->debug('Luigi\'s Box file update.txt not readable');
+                $this->_logger->debug('Luigi\'s Box: file update.txt not readable');
                 return false;
             }
 
@@ -778,7 +811,7 @@ class Helper extends AbstractHelper
             $tmp = $this->_filesystem->getDirectoryWrite(DirectoryList::TMP);
             $tmp->writeFile(self::LOGFILE, json_encode($log));
         } catch (\Magento\Framework\Exception\FileSystemException $ex) {
-            $this->_logger->debug('Luigi\'s Box log file is not writable');
+            $this->_logger->debug('Luigi\'s Box: log file is not writable');
         }
     }
 
@@ -835,15 +868,19 @@ class Helper extends AbstractHelper
         }
     }
 
-    public function setIndexInvalidationTimestamp()
+    public function setIndexInvalidationTimestamp($reindexImmediately = false)
     {
         $now = date('U');
+
+        if ($reindexImmediately) {
+            $now = 0;
+        }
 
         $log = ['invalidated' => $now, 'running' => false, 'finished' => false];
 
         $this->setLogfile($log);
 
-        $this->_logger->debug('Luigi\'s Box index invalidated');
+        $this->_logger->debug('Luigi\'s Box: index invalidated');
     }
 
     public function sanitizeUrl($url, $store)
