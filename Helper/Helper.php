@@ -2,6 +2,7 @@
 
 namespace LuigisBox\SearchSuite\Helper;
 
+use DateTime;
 use Magento\Framework\App\Area;
 use Magento\Framework\App\Config\ScopeConfigInterface;
 use Magento\Framework\App\Filesystem\DirectoryList;
@@ -53,6 +54,8 @@ class Helper extends AbstractHelper
 
     protected $_productStatus;
 
+    protected $_reviewSummaryFactory;
+
     protected $_storeManager;
 
     protected $_filesystem;
@@ -76,6 +79,7 @@ class Helper extends AbstractHelper
         \Magento\Framework\Pricing\Helper\Data $helperPrice,
         \Magento\Catalog\Model\Product\Visibility $productVisibility,
         \Magento\Catalog\Model\Product\Attribute\Source\Status $productStatus,
+        \Magento\Review\Model\ReviewSummaryFactory $reviewSummaryFactory,
         \Magento\Store\Model\StoreManager $storeManager,
         \Magento\Framework\Filesystem $filesystem,
         \Magento\Store\Model\App\Emulation $emulation,
@@ -88,6 +92,7 @@ class Helper extends AbstractHelper
         $this->_helperPrice = $helperPrice;
         $this->_productVisibility = $productVisibility;
         $this->_productStatus = $productStatus;
+        $this->_reviewSummaryFactory = $reviewSummaryFactory;
         $this->_storeManager = $storeManager;
         $this->_filesystem = $filesystem;
         $this->_emulation = $emulation;
@@ -440,19 +445,45 @@ class Helper extends AbstractHelper
                     continue;
                 }
 
+                $price = $item->getSpecialPrice() ?? $item->getPrice();
+
                 $datum = [
                     'url'    => $productUrl,
                     'fields' => [
+                        'magento_id'        => (int) $item->getId(),
                         'title'             => $item->getName(),
                         'product_code'      => $item->getSku(),
-                        'price_amount'      => (float) $item->getPrice(),
-                        'price'             => $this->_helperPrice->currency($item->getPrice(), true, false),
+                        'product_type'      => $item->getTypeId(),
+                        'price'             => $this->_helperPrice->currency($price, true, false),
+                        'old_price'         => $this->_helperPrice->currency($item->getPrice(), true, false),
                         'description'       => trim($item->getDescription()),
                         'short_description' => trim($item->getShortDescription()),
                     ],
                     'enabled' => (in_array($item->getStatus(), $this->_productStatus->getVisibleStatusIds()) && in_array($item->getVisibility(), $this->_productVisibility->getVisibleInSearchIds())),
                     'nested' => [],
                 ];
+
+                if ($price !== $item->getPrice()) {
+                    if ($specialFromDate = $item->getSpecialFromDate()) {
+                        $specialFromDate = new DateTime($specialFromDate);
+                        $datum['fields']['special_price_valid_from'] = $specialFromDate->format(DateTime::ATOM);
+                    }
+                    if ($specialToDate = $item->getSpecialToDate()) {
+                        $specialToDate = new DateTime($specialToDate);
+                        $datum['fields']['special_price_valid_to'] = $specialToDate->format(DateTime::ATOM);
+                    }
+                }
+
+                if ($item->getRatingSummary() === null) {
+                    $this->_reviewSummaryFactory->create()->appendSummaryDataToObject(
+                        $item,
+                        $storeId
+                    );
+                }
+
+                if ($rating = $item->getRatingSummary()) {
+                    $datum['fields']['rating'] = (float) $rating;
+                }
 
                 if ($item->getSmallImage() !== null) {
                     $imageLink = $this->_helperImage->init($item, 'product_page_image_small')->setImageFile($item->getSmallImage())->getUrl();
