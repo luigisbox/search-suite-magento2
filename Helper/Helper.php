@@ -64,6 +64,8 @@ class Helper extends AbstractHelper
 
     protected $_deploymentConfig;
 
+    protected $_stockRegistry;
+
     protected $_fixImageLinksOmittingPubFolder; // @see https://github.com/magento/magento2/issues/9111
 
     /**
@@ -83,7 +85,8 @@ class Helper extends AbstractHelper
         \Magento\Store\Model\StoreManager $storeManager,
         \Magento\Framework\Filesystem $filesystem,
         \Magento\Store\Model\App\Emulation $emulation,
-        \Magento\Framework\App\DeploymentConfig $deploymentConfig
+        \Magento\Framework\App\DeploymentConfig $deploymentConfig,
+        \Magento\CatalogInventory\Api\StockRegistryInterface $stockRegistry
     ) {
         $this->_scopeConfig = $scopeConfig;
         $this->_categoryCollectionFactory = $categoryCollectionFactory;
@@ -97,6 +100,7 @@ class Helper extends AbstractHelper
         $this->_filesystem = $filesystem;
         $this->_emulation = $emulation;
         $this->_deploymentConfig = $deploymentConfig;
+        $this->_stockRegistry = $stockRegistry;
         parent::__construct($context);
     }
 
@@ -447,11 +451,14 @@ class Helper extends AbstractHelper
 
                 $price = $item->getSpecialPrice() ?? $item->getPrice();
 
+                $stockItem = $this->_stockRegistry->getStockItem($item->getId());
+
                 $datum = [
                     'url'    => $productUrl,
                     'fields' => [
                         'magento_id'        => (int) $item->getId(),
                         'title'             => $item->getName(),
+                        'availability'      => $stockItem->getIsInStock() ? 1 : 0,
                         'product_code'      => $item->getSku(),
                         'product_type'      => $item->getTypeId(),
                         'price'             => $this->_helperPrice->currency($price, true, false),
