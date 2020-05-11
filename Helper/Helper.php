@@ -504,6 +504,21 @@ class Helper extends AbstractHelper
                     }
 
                     $datum['fields']['image_link'] = $imageLink;
+                    $datum['fields']['image_link_small'] = $imageLink;
+                }
+
+                if ($item->getImage() !== null) {
+                    $imageLink = $this->_helperImage->init($item, 'product_page_image_medium')->setImageFile($item->getImage())->getUrl();
+                    if ($this->_fixImageLinksOmittingPubFolder === null) {
+                        // Check if given image url is valid
+                        $this->_fixImageLinksOmittingPubFolder = $this->isFixImageLinkNeeded($imageLink);
+                    }
+
+                    if ($this->_fixImageLinksOmittingPubFolder) {
+                        $imageLink = $this->trimPubFromUrl($imageLink);
+                    }
+
+                    $datum['fields']['image_link_medium'] = $imageLink;
                 }
 
                 // Add attributes
