@@ -528,7 +528,9 @@ class Helper extends AbstractHelper
                 $importantAttributes = array_diff($keysAttributes, $this->getIgnoredAttributes());
                 foreach ($importantAttributes as $attributeCode) {
                     $attribute = $attributes[$attributeCode];
-                    $attributeValue = $item->getAttributeText($attributeCode);
+                    if(!($attributeValue = $item->getAttributeText($attributeCode))){
+                        $attributeValue = $attribute->getFrontend()->getValue($item);
+                    }
                     $attributeLabel = $attribute->getDefaultFrontendLabel();
 
                     if ($attributeValue === null || $attributeLabel === null) {
