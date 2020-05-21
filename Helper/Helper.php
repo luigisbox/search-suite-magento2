@@ -68,6 +68,8 @@ class Helper extends AbstractHelper
 
     protected $_fixImageLinksOmittingPubFolder; // @see https://github.com/magento/magento2/issues/9111
 
+    protected $_indexerFactory;
+
     /**
      * @param Context $context
      * @param ScopeConfigInterface $scopeConfig
@@ -86,7 +88,8 @@ class Helper extends AbstractHelper
         \Magento\Framework\Filesystem $filesystem,
         \Magento\Store\Model\App\Emulation $emulation,
         \Magento\Framework\App\DeploymentConfig $deploymentConfig,
-        \Magento\CatalogInventory\Api\StockRegistryInterface $stockRegistry
+        \Magento\CatalogInventory\Api\StockRegistryInterface $stockRegistry,
+        \Magento\Indexer\Model\IndexerFactory $indexerFactory
     ) {
         $this->_scopeConfig = $scopeConfig;
         $this->_categoryCollectionFactory = $categoryCollectionFactory;
@@ -101,6 +104,7 @@ class Helper extends AbstractHelper
         $this->_emulation = $emulation;
         $this->_deploymentConfig = $deploymentConfig;
         $this->_stockRegistry = $stockRegistry;
+        $this->_indexerFactory = $indexerFactory;
         parent::__construct($context);
     }
 
@@ -842,100 +846,11 @@ class Helper extends AbstractHelper
         return ($response->getStatusCode() === 200);
     }
 
-    public function getLogfile()
+    public function invalidateIndex()
     {
-        $tmp = $this->_filesystem->getDirectoryRead(DirectoryList::TMP);
-
-        if ($tmp->isExist(self::LOGFILE)) {
-            try {
-                $log = json_decode($tmp->readFile(self::LOGFILE));
-            } catch (\Magento\Framework\Exception\FileSystemException $ex) {
-                $this->_logger->debug('Luigi\'s Box: file update.txt not readable');
-                return false;
-            }
-
-            return $log;
-        }
-
-        return false;
-    }
-
-    public function setLogfile($log)
-    {
-        try {
-            $tmp = $this->_filesystem->getDirectoryWrite(DirectoryList::TMP);
-            $tmp->writeFile(self::LOGFILE, json_encode($log));
-        } catch (\Magento\Framework\Exception\FileSystemException $ex) {
-            $this->_logger->debug('Luigi\'s Box: log file is not writable');
-        }
-    }
-
-    public function isIndexValid()
-    {
-        $now = date('U');
-
-        $last = 0;
-
-        if ($log = $this->getLogfile()) {
-            $last = $log->invalidated;
-        }
-
-        $diff = $now - $last;
-
-        return ($diff < self::INTERVAL);
-    }
-
-    public function isIndexFinished()
-    {
-        if ($log = $this->getLogfile()) {
-            return $log->finished;
-        }
-
-        return true;
-    }
-
-    public function isIndexRunning()
-    {
-        if ($log = $this->getLogfile()) {
-            return $log->running;
-        }
-
-        return false;
-    }
-
-    public function markIndexFinished()
-    {
-        if ($log = $this->getLogfile()) {
-            $log->finished = true;
-            $log->running = false;
-
-            $this->setLogfile($log);
-        }
-    }
-
-    public function markIndexRunning()
-    {
-        if ($log = $this->getLogfile()) {
-            $log->finished = false;
-            $log->running = true;
-
-            $this->setLogfile($log);
-        }
-    }
-
-    public function setIndexInvalidationTimestamp($reindexImmediately = false)
-    {
-        $now = date('U');
-
-        if ($reindexImmediately) {
-            $now = 0;
-        }
-
-        $log = ['invalidated' => $now, 'running' => false, 'finished' => false];
-
-        $this->setLogfile($log);
-
-        $this->_logger->debug('Luigi\'s Box: index invalidated');
+        $indexer = $this->_indexerFactory->create();
+        $indexer->load('luigisbox_reindex');
+        $indexer->invalidate();
     }
 
     public function sanitizeUrl($url, $store)

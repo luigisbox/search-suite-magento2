@@ -20,6 +20,17 @@ class Product implements \Magento\Framework\Indexer\ActionInterface, \Magento\Fr
 
     public function execute($ids)
     {
+        $this->_logger->debug('Luigi\'s Box Indexer triggered');
+
+        if (!$this->_helper->isConfigured()) {
+            $this->_logger->debug('Luigi\'s Box not configured, can not index products');
+            return;
+        }
+
+        foreach ($ids as $id) {
+            $this->_helper->singleContentUpdate($id);
+        }
+        $this->_logger->debug('Luigi\'s Box Indexer finished');
     }
 
     public function executeFull()
@@ -29,24 +40,31 @@ class Product implements \Magento\Framework\Indexer\ActionInterface, \Magento\Fr
             return;
         }
 
-        // Run reindex if index timestamp is invalidated and
-        if (!$this->_helper->isIndexValid() || $this->_helper->isIndexRunning() || $this->_helper->isIndexFinished()) {
-            $this->_logger->debug('Luigi\'s Box reindex preventing run');
-            return;
-        }
-
-        $this->_helper->markIndexRunning();
-
         $this->_helper->allContentUpdate();
 
-        $this->_helper->markIndexFinished();
     }
 
     public function executeList(array $ids)
     {
+        $this->_logger->debug('Luigi\'s Box Indexer triggered');
+
+        if (!$this->_helper->isConfigured()) {
+            $this->_logger->debug('Luigi\'s Box not configured, can not index products');
+            return;
+        }
+
+        foreach ($ids as $id) {
+            $this->_helper->singleContentUpdate($id);
+        }
+        $this->_logger->debug('Luigi\'s Box Indexer finished');
     }
 
     public function executeRow($id)
     {
+        if (!$this->_helper->isConfigured()) {
+            $this->_logger->debug('Luigi\'s Box not configured, can not index products');
+            return;
+        }
+        $this->_helper->singleContentUpdate($id);
     }
 }

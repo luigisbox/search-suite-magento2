@@ -8,6 +8,7 @@
                 <attributes_visible>1</attributes_visible>
                 <attributes_searchable>1</attributes_searchable>
                 <attributes_filterable>1</attributes_filterable>
+                <cron_schedule>0 4 * * *</cron_schedule>
             </settings>
         </luigisboxsearch_settings>
     </default>

@@ -1,9 +1,9 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <config xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="urn:magento:framework:Indexer/etc/indexer.xsd">
-    <indexer id="luigisbox_index_product" view_id="luigisbox_index_product" class="LuigisBox\SearchSuite\Model\Indexer\Product">
-        <title translate="true">Luigi's Box Search Results</title>
+    <indexer id="luigisbox_reindex" view_id="luigisbox_reindex" class="LuigisBox\SearchSuite\Model\Indexer\Product">
+        <title translate="true">Luigi's Box Reindexer</title>
         <description translate="true">
-            Rebuild Luigi's Box catalog index.
+            Reindex products in Luigi's Box catalog index.
         </description>
     </indexer>
 </config>

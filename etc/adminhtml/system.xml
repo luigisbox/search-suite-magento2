@@ -76,7 +76,18 @@
                     </depends>
                     <source_model>Magento\Config\Model\Config\Source\Yesno</source_model>
                 </field>
-                <field id="force_reindex" translate="label comment" type="button" sortOrder="8" showInDefault="1" showInWebsite="1" showInStore="1">
+                <field id="cron_schedule" translate="label comment" type="text" sortOrder="8" showInDefault="1" showInWebsite="1" showInStore="1">
+                    <label>Nightly reindex cron schedule</label>
+                    <depends>
+                        <field id="enabled">1</field>
+                    </depends>
+                    <comment>
+                        <![CDATA[
+                            Enter the cron schedule expression. Use <a href="https://crontab.guru/" target="_blank">this website</a> to help you make one.
+                        ]]>
+                    </comment>
+                </field>
+                <field id="force_reindex" translate="label comment" type="button" sortOrder="9" showInDefault="1" showInWebsite="1" showInStore="1">
                     <frontend_model>LuigisBox\SearchSuite\Block\Reindex</frontend_model>
                     <label>Force reindex</label>
                     <depends>

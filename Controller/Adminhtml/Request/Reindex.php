@@ -33,7 +33,7 @@ class Reindex extends Action
      */
     public function execute()
     {
-        $this->_luigisBoxHelper->setIndexInvalidationTimestamp(true);
+        $this->_luigisBoxHelper->invalidateIndex();
 
         $result = $this->_jsonFactory->create();
 

@@ -11,12 +11,12 @@ Installation
 
 We strongly recommend to use [Composer](https://getcomposer.org/).
 
-Please run the following commands in root of your M2 installation:
+Please run **all** of the following commands in root of your M2 installation:
 
 - ```$ composer require luigisbox/search-suite-magento2```
 - ```$ bin/magento module:enable LuigisBox_SearchSuite```
 - ```$ bin/magento setup:upgrade```
 - ```$ bin/magento setup:di:compile```
-- ```$ bin/magento indexer:set-mode schedule luigisbox_index_product```
+- ```$ bin/magento indexer:set-mode schedule luigisbox_reindex```
 
 Once you completed these steps, you are done with the installation. Now please go to `Administration > Stores > Configuration > Luigi's Box` and configure the extension there.  

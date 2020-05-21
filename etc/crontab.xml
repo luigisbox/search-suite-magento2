@@ -1,8 +1,8 @@
 <?xml version="1.0"?>
 <config xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="urn:magento:module:Magento_Cron:etc/crontab.xsd">
     <group id="default">
-        <job name="luigisbox_cron_checker" instance="LuigisBox\SearchSuite\Cron\Checker" method="execute">
-            <schedule>* * * * *</schedule>
+        <job name="luigisbox_idx_invalidator" instance="LuigisBox\SearchSuite\Cron\IndexInvalidator" method="execute">
+            <config_path>luigisboxsearch_settings/settings/cron_schedule</config_path>
         </job>
     </group>
 </config>
