@@ -5,7 +5,6 @@ namespace LuigisBox\SearchSuite\Helper;
 use DateTime;
 use Magento\Framework\App\Area;
 use Magento\Framework\App\Config\ScopeConfigInterface;
-use Magento\Framework\App\Filesystem\DirectoryList;
 use Magento\Framework\App\Helper\AbstractHelper;
 use Magento\Framework\App\Helper\Context;
 use Zend\Http\Client;
@@ -32,6 +31,10 @@ class Helper extends AbstractHelper
 
     const TYPE_ITEM     = 'item';
     const TYPE_CATEGORY = 'category';
+    const TYPE_VARIANT  = 'variant';
+    const TYPE_MEMBER   = 'member';
+
+    const MAGENTO_PRODUCT_TYPE_CONFIGURABLE = 'configurable';
 
     const LOGFILE = 'luigisbox/update.txt';
     const INTERVAL = 86400;
@@ -70,6 +73,10 @@ class Helper extends AbstractHelper
 
     protected $_indexerFactory;
 
+    protected $_productTypeConfigurable;
+
+    protected $_productTypeGrouped;
+
     /**
      * @param Context $context
      * @param ScopeConfigInterface $scopeConfig
@@ -89,7 +96,9 @@ class Helper extends AbstractHelper
         \Magento\Store\Model\App\Emulation $emulation,
         \Magento\Framework\App\DeploymentConfig $deploymentConfig,
         \Magento\CatalogInventory\Api\StockRegistryInterface $stockRegistry,
-        \Magento\Indexer\Model\IndexerFactory $indexerFactory
+        \Magento\Indexer\Model\IndexerFactory $indexerFactory,
+        \Magento\ConfigurableProduct\Model\Product\Type\Configurable $productTypeConfigurable,
+        \Magento\GroupedProduct\Model\Product\Type\Grouped $productTypeGrouped
     ) {
         $this->_scopeConfig = $scopeConfig;
         $this->_categoryCollectionFactory = $categoryCollectionFactory;
@@ -105,6 +114,8 @@ class Helper extends AbstractHelper
         $this->_deploymentConfig = $deploymentConfig;
         $this->_stockRegistry = $stockRegistry;
         $this->_indexerFactory = $indexerFactory;
+        $this->_productTypeConfigurable = $productTypeConfigurable;
+        $this->_productTypeGrouped = $productTypeGrouped;
         parent::__construct($context);
     }
 
@@ -411,6 +422,9 @@ class Helper extends AbstractHelper
         $start = 0;
         $take = 500;
         $data = [];
+        $nestedVariants = [];
+        $nestedMembers = [];
+        $parentVariantAttributeCodes = [];
 
         $storeId = $store->getStoreId();
         $this->_emulation->startEnvironmentEmulation($storeId, Area::AREA_FRONTEND, true);
@@ -435,7 +449,7 @@ class Helper extends AbstractHelper
                     ->addAttributeToFilter('status', ['in' => $this->_productStatus->getVisibleStatusIds()])
                     ->setVisibility($this->_productVisibility->getVisibleInSearchIds());
             } else {
-                $productCollection->addFieldToFilter('entity_id', $id);
+                $productCollection->addFieldToFilter('entity_id', ['in' => $this->getItemTreeIds($id)]);
             }
 
             $productCollection->load();
@@ -473,6 +487,21 @@ class Helper extends AbstractHelper
                     'enabled' => (in_array($item->getStatus(), $this->_productStatus->getVisibleStatusIds()) && in_array($item->getVisibility(), $this->_productVisibility->getVisibleInSearchIds())),
                     'nested' => [],
                 ];
+
+                if ($parentIdVariant = $this->getItemParentId($item->getId(), self::TYPE_VARIANT)) {
+                    $nestedVariants[$datum['fields']['magento_id']] = [
+                        'parent'     => $parentIdVariant,
+                        'item'       => $item,
+                    ];
+                }
+                if ($parentIdMember  = $this->getItemParentId($item->getId(), self::TYPE_MEMBER)) {
+                    $nestedMembers[$datum['fields']['magento_id']] = [
+                        'parent'     => $parentIdMember,
+                    ];
+                }
+                if ($item->getTypeId() == self::MAGENTO_PRODUCT_TYPE_CONFIGURABLE) {
+                    $parentVariantAttributeCodes[$item->getId()] = $this->getConfigurableProductAttributeCodes($item);
+                }
 
                 if ($price !== $item->getPrice()) {
                     if ($specialFromDate = $item->getSpecialFromDate()) {
@@ -532,7 +561,7 @@ class Helper extends AbstractHelper
                 $importantAttributes = array_diff($keysAttributes, $this->getIgnoredAttributes());
                 foreach ($importantAttributes as $attributeCode) {
                     $attribute = $attributes[$attributeCode];
-                    if(!($attributeValue = $item->getAttributeText($attributeCode))){
+                    if (!($attributeValue = $item->getAttributeText($attributeCode))) {
                         $attributeValue = $attribute->getFrontend()->getValue($item);
                     }
                     $attributeLabel = $attribute->getDefaultFrontendLabel();
@@ -564,7 +593,7 @@ class Helper extends AbstractHelper
                     }
                 }
 
-                $data[] = $datum;
+                $data[$datum['fields']['magento_id']] = $datum;
             }
 
             $start = $item->getEntityId();
@@ -574,9 +603,40 @@ class Helper extends AbstractHelper
             }
         }
 
+        $nestedProductTypes = [
+            self::TYPE_VARIANT,
+            self::TYPE_MEMBER,
+        ];
+
+        foreach ($nestedProductTypes as $nestedProductType) {
+            $nestedProducts = sprintf('nested%ss', ucfirst($nestedProductType));
+            foreach ($$nestedProducts as $childId => $nestedProduct) {
+                if (array_key_exists($nestedProduct['parent'], $data)) {
+                    if ($nestedProductType === self::TYPE_VARIANT
+                     && $nestedProduct['item']->getVisibility() == $this->_productVisibility::VISIBILITY_NOT_VISIBLE) {
+                        // Generate custom link for not individually visible products
+                        $parentUrl = $data[$nestedProduct['parent']]['url'] ?? null;
+                        $url = $this->generateProductVariantUrl($nestedProduct, $parentVariantAttributeCodes, $parentUrl);
+
+                        if ($url === null) {
+                            // Can not generate child URL, omitting
+                            unset($data['child']);
+                            continue;
+                        }
+
+                        $data[$childId]['url'] = $url;
+                    }
+
+                    $data[$childId]['type'] = $nestedProductType;
+                    $data[$nestedProduct['parent']]['nested'][] = $data[$childId];
+                    unset($data[$childId]);
+                }
+            }
+        }
+
         $this->_emulation->stopEnvironmentEmulation();
 
-        return $data;
+        return array_values($data);
     }
 
     public function getIgnoredAttributes()
@@ -808,7 +868,7 @@ class Helper extends AbstractHelper
 
             $generation = (string) round(microtime(true));
 
-            $this->contentRequest($store, $data, Helper::TYPE_ITEM, $generation, [Helper::TYPE_CATEGORY]);
+            $this->contentRequest($store, $data, Helper::TYPE_ITEM, $generation, [Helper::TYPE_CATEGORY, Helper::TYPE_VARIANT, Helper::TYPE_MEMBER]);
         }
 
         $this->_logger->info('Luigi\'s Box: product update end');
@@ -863,5 +923,106 @@ class Helper extends AbstractHelper
         }
 
         return preg_replace('/' . preg_quote($currentHost) . '/', $validHost, $url, 1);
+    }
+
+    /**
+     * Retrieve product related entity ids. Parent with siblings or children for given type.
+     *
+     * @param $id Product Product Id
+     * @param null $type  All types will be returned if no type is specified.
+     * @return array
+     */
+    public function getItemTreeIds($id, $type = null)
+    {
+        $ids = [$id];
+
+        if ($type === null) {
+            $variantTree = $this->getItemTreeIds($id, self::TYPE_VARIANT);
+            $memberTree = $this->getItemTreeIds($id, self::TYPE_MEMBER);
+
+            return array_unique(array_merge($variantTree, $memberTree));
+        }
+
+        $productType = $this->getProductTypeObject($type);
+        $parentId = $this->getItemParentId($id, $type);
+
+        if ($parentId) {
+            $ids[] = $parentId;
+
+            $siblingIds = $productType->getChildrenIds($parentId);
+            if (!empty($siblingIds)) {
+                $siblingIds = array_map('intval', array_values(array_pop($siblingIds)));
+                $ids = array_merge($ids, $siblingIds);
+            }
+        } else {
+            $childIds = $productType->getChildrenIds($id);
+            if (!empty($childIds)) {
+                $childIds = array_map('intval', array_values(array_pop($childIds)));
+                $ids = array_merge($ids, $childIds);
+            }
+        }
+
+        return array_unique($ids);
+    }
+
+    public function getItemParentId($id, $type)
+    {
+        $parentIds = $this->getProductTypeObject($type)->getParentIdsByChild($id);
+
+        return !empty($parentIds) ? (int) $parentIds[0] : null;
+    }
+
+    public function getProductTypeObject($type)
+    {
+        switch ($type) {
+            case self::TYPE_VARIANT:
+                $productType = $this->_productTypeConfigurable;
+                break;
+            case self::TYPE_MEMBER:
+                $productType = $this->_productTypeGrouped;
+                break;
+            default:
+                $productType = null;
+                break;
+        }
+
+        return $productType;
+    }
+
+    public function getConfigurableProductAttributeCodes($product)
+    {
+        $configurableAttributes = $this->_productTypeConfigurable->getConfigurableAttributesAsArray($product);
+        $attributeCodes = [];
+        foreach ($configurableAttributes as $configurableAttribute) {
+            $variantAttributeCode = $configurableAttribute['attribute_code'] ?? null;
+            if (empty($variantAttributeCode)) {
+                continue;
+            }
+
+            $attributeCodes[] = $variantAttributeCode;
+        }
+
+        return $attributeCodes;
+    }
+
+    public function generateProductVariantUrl($nestedProduct, $parentVariantAttributeCodes, $parentUrl)
+    {
+        $urlParams = $parentVariantAttributeCodes[$nestedProduct['parent']] ?? null;
+        if (empty($urlParams)) {
+            return null;
+        }
+
+        $item = $nestedProduct['item'];
+
+        $queryData = [];
+        foreach ($urlParams as $urlParam) {
+            if ($urlParamValue = $item->getData($urlParam)) {
+                $queryData[$urlParam] = $urlParamValue;
+            } else {
+                return null;
+            }
+        }
+
+        return sprintf('%s?%s', $parentUrl, http_build_query($queryData));
     }
 }
