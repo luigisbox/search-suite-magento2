@@ -43,6 +43,8 @@ class Helper extends AbstractHelper
     const TIMEOUT_CODES = [408, 504];
     const COMMIT_RATIO = 0.95;
 
+    const CLIENT_ATTRIBUTE = 'magento';
+
     protected $_scopeConfig;
 
     protected $_categoryCollectionFactory;
@@ -77,6 +79,8 @@ class Helper extends AbstractHelper
 
     protected $_productTypeGrouped;
 
+    protected $_productMetadata;
+
     /**
      * @param Context $context
      * @param ScopeConfigInterface $scopeConfig
@@ -98,7 +102,8 @@ class Helper extends AbstractHelper
         \Magento\CatalogInventory\Api\StockRegistryInterface $stockRegistry,
         \Magento\Indexer\Model\IndexerFactory $indexerFactory,
         \Magento\ConfigurableProduct\Model\Product\Type\Configurable $productTypeConfigurable,
-        \Magento\GroupedProduct\Model\Product\Type\Grouped $productTypeGrouped
+        \Magento\GroupedProduct\Model\Product\Type\Grouped $productTypeGrouped,
+        \Magento\Framework\App\ProductMetadataInterface $productMetadata
     ) {
         $this->_scopeConfig = $scopeConfig;
         $this->_categoryCollectionFactory = $categoryCollectionFactory;
@@ -116,6 +121,7 @@ class Helper extends AbstractHelper
         $this->_indexerFactory = $indexerFactory;
         $this->_productTypeConfigurable = $productTypeConfigurable;
         $this->_productTypeGrouped = $productTypeGrouped;
+        $this->_productMetadata = $productMetadata;
         parent::__construct($context);
     }
 
@@ -431,6 +437,10 @@ class Helper extends AbstractHelper
 
         $categories = $this->getCategories($store);
 
+        $client = self::CLIENT_ATTRIBUTE;
+        $clientVersion = $this->getPluginVersion();
+        $platform = sprintf('%s %s %s', ucfirst($client), $this->_productMetadata->getEdition(), $this->_productMetadata->getVersion());
+
         while (true) {
             $productCollection = $this->_productCollectionFactory->create()
                 ->addAttributeToSort('entity_id', 'asc')
@@ -483,6 +493,9 @@ class Helper extends AbstractHelper
                         'old_price'         => $this->_helperPrice->currency($item->getPrice(), true, false),
                         'description'       => trim($item->getDescription()),
                         'short_description' => trim($item->getShortDescription()),
+                        '_client'           => $client,
+                        '_client_version'   => $clientVersion,
+                        '_platform'         => $platform,
                     ],
                     'enabled' => (in_array($item->getStatus(), $this->_productStatus->getVisibleStatusIds()) && in_array($item->getVisibility(), $this->_productVisibility->getVisibleInSearchIds())),
                     'nested' => [],
@@ -1024,5 +1037,19 @@ class Helper extends AbstractHelper
         }
 
         return sprintf('%s?%s', $parentUrl, http_build_query($queryData));
+    }
+
+    public function getPluginVersion()
+    {
+        $composerFile = realpath(__DIR__ . '/../composer.json');
+
+        if (empty($composerFile)) {
+            return null;
+        }
+
+        $packageInfoRaw = @file_get_contents($composerFile);
+        $packageInfo = json_decode($packageInfoRaw);
+
+        return $packageInfo->version ?? null;
     }
 }
