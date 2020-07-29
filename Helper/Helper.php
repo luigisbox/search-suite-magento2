@@ -456,8 +456,7 @@ class Helper extends AbstractHelper
 
             if ($id === null) {
                 $productCollection->addFieldToFilter('entity_id', ['gt' => $start])
-                    ->addAttributeToFilter('status', ['in' => $this->_productStatus->getVisibleStatusIds()])
-                    ->setVisibility($this->_productVisibility->getVisibleInSearchIds());
+                    ->addAttributeToFilter('status', ['in' => $this->_productStatus->getVisibleStatusIds()]);
             } else {
                 $productCollection->addFieldToFilter('entity_id', ['in' => $this->getItemTreeIds($id)]);
             }
