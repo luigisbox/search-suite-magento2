@@ -244,7 +244,8 @@ class Helper extends AbstractHelper
 
         $params = new \Zend\Stdlib\Parameters([
             'generation' => $generation,
-            'type'       => $type
+            'validate_generation' => 'false',
+            'type' => $type
         ]);
 
         $request->setQuery($params);
